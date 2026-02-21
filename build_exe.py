@@ -4,33 +4,29 @@ import platform
 import customtkinter
 
 def build():
-    # Ścieżka do głównego pliku wykonywalnego
+    # Główne ścieżki
     main_path = os.path.join("src", "mt940_py", "main.py")
     
     # Dynamiczne znajdowanie ścieżki do customtkinter
     ctk_path = os.path.dirname(customtkinter.__file__)
     
-    # Separator zależy od systemu (Windows używa ';', Linux ':')
+    # Separator: Windows ';', Linux ':'
     separator = ";" if platform.system() == "Windows" else ":"
-    
-    # Format argumentu --add-data: "źródło:cel"
     add_data_arg = f"{ctk_path}{separator}customtkinter"
     
-    # Argumenty PyInstallera
     args = [
         main_path,
-        "--onefile",                # Jeden plik EXE
-        "--noconsole",              # Brak konsoli (GUI)
-        "--name=MT940-Converter",   # Nazwa pliku wynikowego
-        "--clean",                  # Wyczyść cache
-        f"--add-data={add_data_arg}", # Dodaj pliki customtkinter
-        # Opcjonalnie: Dodaj ikonę jeśli istnieje
-        # "--icon=icon.ico", 
+        "--onefile",
+        "--noconsole",
+        "--name=MT940-Converter",
+        "--clean",
+        f"--add-data={add_data_arg}",
     ]
     
-    print(f"--- Rozpoczynam budowanie dla systemu: {platform.system()} ---")
-    print(f"Ścieżka CustomTkinter: {ctk_path}")
-    print(f"Argumenty: {args}")
+    # Komunikaty bez polskich znaków (bezpieczeństwo kodowania konsoli)
+    print(f"--- Starting build for: {platform.system()} ---")
+    print(f"CustomTkinter path: {ctk_path}")
+    print(f"Arguments: {args}")
     
     PyInstaller.__main__.run(args)
 
