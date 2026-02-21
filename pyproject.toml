@@ -1,6 +1,6 @@
 [project]
 name = "mt940-py"
-version = "0.1.0"
+version = "0.1.1"
 description = "Narzędzie do walidacji i konwersji wyciągów bankowych do formatu MT940 (wariant ZBP)."
 authors = [
     { name = "TheUndefined", email = "undefine@aramin.net" }
