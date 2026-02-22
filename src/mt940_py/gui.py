@@ -1,4 +1,5 @@
 import os
+import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from mt940_py.converter import MT940Converter
@@ -7,7 +8,6 @@ from mt940_py.validator import MT940Validator
 # Ustawienia wyglądu
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
-
 
 class MT940App(ctk.CTk):
     def __init__(self):
@@ -35,9 +35,7 @@ class MT940App(ctk.CTk):
         self.select_button = ctk.CTkButton(self.button_frame, text="Wybierz plik CSV (mBank)", command=self.select_file)
         self.select_button.grid(row=0, column=0, padx=10, pady=10)
 
-        self.val_button = ctk.CTkButton(
-            self.button_frame, text="Waliduj plik MT940", command=self.validate_mt940, fg_color="gray"
-        )
+        self.val_button = ctk.CTkButton(self.button_frame, text="Waliduj plik MT940", command=self.validate_mt940, fg_color="gray")
         self.val_button.grid(row=0, column=1, padx=10, pady=10)
 
         # Status pliku
@@ -55,7 +53,8 @@ class MT940App(ctk.CTk):
 
     def select_file(self):
         file_path = filedialog.askopenfilename(
-            title="Wybierz plik mBank CSV", filetypes=[("Pliki CSV", "*.csv"), ("Wszystkie pliki", "*.*")]
+            title="Wybierz plik mBank CSV",
+            filetypes=[("Pliki CSV", "*.csv"), ("Wszystkie pliki", "*.*")]
         )
         if file_path:
             self.status_label.configure(text=f"Wybrano: {os.path.basename(file_path)}")
@@ -66,7 +65,7 @@ class MT940App(ctk.CTk):
             title="Zapisz jako MT940",
             defaultextension=".txt",
             initialfile=os.path.basename(input_path).replace(".csv", ".txt"),
-            filetypes=[("Pliki tekstowe", "*.txt"), ("Pliki MT940", "*.sta"), ("Wszystkie pliki", "*.*")],
+            filetypes=[("Pliki tekstowe", "*.txt"), ("Pliki MT940", "*.sta"), ("Wszystkie pliki", "*.*")]
         )
 
         if not output_path:
@@ -76,11 +75,12 @@ class MT940App(ctk.CTk):
             self.log(f"Rozpoczynam konwersję: {os.path.basename(input_path)}...")
             with open(input_path, "r", encoding="cp1250", errors="replace") as f:
                 content = f.read()
-
+            
             mt940_content = self.converter.convert(content)
-            with open(output_path, "w", encoding="utf-8") as f:
+            # Zapisujemy jako UTF-8 z BOM (utf-8-sig)
+            with open(output_path, "w", encoding="utf-8-sig") as f:
                 f.write(mt940_content)
-
+            
             self.log(f"SUCCESS: Zapisano do {output_path}")
             val_results = self.validator.validate_file(output_path)
             if val_results["is_valid"]:
@@ -95,7 +95,8 @@ class MT940App(ctk.CTk):
 
     def validate_mt940(self):
         file_path = filedialog.askopenfilename(
-            title="Wybierz plik MT940", filetypes=[("Pliki tekstowe", "*.txt"), ("Wszystkie pliki", "*.*")]
+            title="Wybierz plik MT940",
+            filetypes=[("Pliki tekstowe", "*.txt"), ("Pliki MT940", "*.sta"), ("Wszystkie pliki", "*.*")]
         )
         if file_path:
             val_results = self.validator.validate_file(file_path)
@@ -106,11 +107,9 @@ class MT940App(ctk.CTk):
                 self.log(f"FAILURE: Plik {os.path.basename(file_path)} błędny.")
                 messagebox.showerror("Błąd", "Plik zawiera błędy.")
 
-
 def main():
     app = MT940App()
     app.mainloop()
-
 
 if __name__ == "__main__":
     main()

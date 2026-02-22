@@ -19,8 +19,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command", help="Komenda do wykonania")
 
     # CLI commands
-    val_parser = subparsers.add_parser("validate", help="Waliduje plik MT940")
-    val_parser.add_argument("file")
+    subparsers.add_parser("validate", help="Waliduje plik MT940").add_argument("file")
     
     conv_parser = subparsers.add_parser("convert", help="Konwertuje CSV to MT940")
     conv_parser.add_argument("input")
@@ -51,7 +50,8 @@ def main():
         try:
             with open(args.input, 'r', encoding='cp1250', errors='replace') as f:
                 mt940_res = MT940Converter().convert(f.read())
-            with open(args.output, 'w', encoding='utf-8') as f:
+            # Zapisujemy jako UTF-8 z BOM (utf-8-sig)
+            with open(args.output, 'w', encoding='utf-8-sig') as f:
                 f.write(mt940_res)
             print(f"SUCCESS: {args.output}")
         except Exception as e:

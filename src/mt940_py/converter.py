@@ -5,7 +5,7 @@ import re
 from typing import List
 
 class MT940Converter:
-    """Konwerter plików CSV (mBank) do formatu MT940 (ZBP)."""
+    """Konwerter plików CSV (mBank) do formatu MT940 (ZBP) zgodnego z mBank/Insert."""
 
     def __init__(self, encoding: str = "cp1250") -> None:
         self.encoding = encoding
@@ -46,6 +46,7 @@ class MT940Converter:
         account_number = ""
         initial_balance = 0.0
         currency = "PLN"
+        statement_date = ""
 
         for i, line in enumerate(lines[:header_index]):
             if "#Numer rachunku" in line:
@@ -69,70 +70,93 @@ class MT940Converter:
 
         f = io.StringIO("\n".join(lines[header_index:]))
         reader = csv.DictReader(f, delimiter=";")
+        
+        # Przygotowanie transakcji do późniejszego użycia (potrzebujemy daty pierwszej transakcji)
+        rows = []
+        for row in reader:
+            raw_date = row.get("#Data księgowania")
+            if raw_date and re.match(r"\d{4}-\d{2}-\d{2}", raw_date):
+                rows.append(row)
+        
+        if rows and not statement_date:
+            statement_date = self._format_date(rows[0]["#Data księgowania"])
+        else:
+            statement_date = datetime.datetime.now().strftime("%y%m%d")
 
         output = []
+        # :20:
         output.append(":20:MT940")
 
+        # :25:
         if account_number:
             output.append(f":25:/PL{account_number}")
         else:
             output.append(":25:/UNKNOWN_ACCOUNT")
 
-        output.append(":28C:00001")
+        # :28C: Numer wyciągu (mBank używa daty YYMMDD)
+        output.append(f":28C:{statement_date}")
 
-        today_swift = datetime.datetime.now().strftime("%y%m%d")
-        output.append(f":60F:C{today_swift}{currency}{self._format_amount(initial_balance)}")
+        # :60F: Saldo początkowe
+        sign_60 = "C" if initial_balance >= 0 else "D"
+        output.append(f":60F:{sign_60}{statement_date}{currency}{self._format_amount(initial_balance)}")
 
         current_balance = initial_balance
-
-        for row in reader:
-            raw_date = row.get("#Data księgowania")
-            if not raw_date or not re.match(r"\d{4}-\d{2}-\d{2}", raw_date):
-                continue
-
-            date_val = self._format_date(raw_date)
-            try:
-                amount_str = self._clean_amount_str(row.get("#Kwota", "0"))
-                amount = float(amount_str)
-            except (ValueError, TypeError):
-                continue
-
+        
+        for idx, row in enumerate(rows):
+            date_val = self._format_date(row["#Data księgowania"])
+            amount = float(self._clean_amount_str(row.get("#Kwota", "0")))
             current_balance += amount
 
+            # :61: Linia transakcji
+            # Dodajemy numer referencyjny na końcu (np. SD95 + numer kolejny)
             sign_61 = "C" if amount >= 0 else "D"
-            output.append(f":61:{date_val}{date_val[2:]}{sign_61}{self._format_amount(amount)}SD95")
+            ref_num = f"{idx+1:011d}"
+            output.append(f":61:{date_val}{date_val[2:]}{sign_61}{self._format_amount(amount)}SD95{ref_num}")
 
-            details = []
-            details.append("~00BD95")
-
+            # :86: Struktura mBanku (podwójny tag :86: i brak :86: w kolejnych liniach pola)
+            output.append(":86:SD95")
+            
             operation_type = row.get("#Opis operacji", "")
             title = row.get("#Tytuł", "")
-            full_title = f"{operation_type} {title}".strip()
-
-            for i, part in enumerate(self._wrap_text(full_title, 27)[:8]):
-                details.append(f"~{20+i}{part}")
-
+            
+            # Budujemy linię 2 pola 86
+            details_line2 = f"SD95~00BD95{operation_type}"
+            # Kolejne linie tytułu i danych
+            details_remaining = []
+            
+            title_parts = self._wrap_text(title, 27)
+            for i, part in enumerate(title_parts[:8]):
+                details_remaining.append(f"~{20+i}{part}")
+                
             contractor = row.get("#Nadawca/Odbiorca", "")
             contractor_parts = self._wrap_text(contractor, 35)
             if len(contractor_parts) > 0:
-                details.append(f"~32{contractor_parts[0]}")
+                details_remaining.append(f"~32{contractor_parts[0]}")
             if len(contractor_parts) > 1:
-                details.append(f"~33{contractor_parts[1]}")
-
+                details_remaining.append(f"~33{contractor_parts[1]}")
+                
             acc = row.get("#Numer konta", "").replace("'", "").strip()
             if acc:
                 acc_clean = re.sub(r"[^\d]", "", acc)
                 if acc_clean:
-                    details.append(f"~31{acc_clean}")
-                    details.append(f"~38PL{acc_clean}")
+                    details_remaining.append(f"~31{acc_clean}")
+                    details_remaining.append(f"~38PL{acc_clean}")
 
-            raw_86 = "".join(details)
-            formatted_86 = self._wrap_text(raw_86, 65)
-            if formatted_86:
-                output.append(f":86:{formatted_86[0]}")
-                for extra_line in formatted_86[1:]:
-                    output.append(extra_line)
+            # Składamy wszystko w całość zgodnie z formatem mBanku
+            # Pierwsza linia po :86: (druga w sumie)
+            raw_full_86 = "".join(details_remaining)
+            wrapped_86 = self._wrap_text(raw_full_86, 65)
+            
+            output.append(f":86:{details_line2}")
+            for line in wrapped_86:
+                output.append(line)
 
-        output.append(f":62F:C{today_swift}{currency}{self._format_amount(current_balance)}")
+        # :62F:
+        sign_62 = "C" if current_balance >= 0 else "D"
+        # Data salda końcowego z ostatniej transakcji lub dzisiejsza
+        last_date = self._format_date(rows[-1]["#Data księgowania"]) if rows else statement_date
+        output.append(f":62F:{sign_62}{last_date}{currency}{self._format_amount(current_balance)}")
 
-        return "\n".join(output)
+        # Dodajemy znak końca pliku (opcjonalnie, ale mBank często go nie ma, SWIFT wymaga tylko pól)
+        # Łączymy używając CRLF
+        return "\r\n".join(output) + "\r\n"
